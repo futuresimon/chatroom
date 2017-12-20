@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<!-- I derived code from http://psitsmike.com/2011/10/node-js-and-socket-io-multiroom-chat-tutorial/
+to help me with some of the socket functions. All code I derived from that site is cited.. -->
+<head>
+  <style>
+    #wrapper {
+      width:900px;
+      height:400px
+      clear:both;
+      margin-bottom: 10px;
+    }
+    /*help with css: https://stackoverflow.com/questions/18392584/remove-spacing-between-p*/
+    p {
+      padding : 0;
+      margin : 0;
+      line-height : 20px;
+    }
+    /*end help*/
+    p.red {
+      color: red;
+    }
+    p.green {
+      color: green;
+    }
+    p.blue {
+      color: blue;
+    }
+    #logged_in_user{
+      margin-left:auto;
+      margin-right:auto;
+      text-align: center;
+    }
+    #userlog {
+      background-color:pink;
+      width:300px;
+      max-height:400px;
+      height:400px;
+      overflow: auto;
+      float:left;
+      margin-bottom: 100px;
+    }
+    #chatlog {
+      background-color:lightblue;
+      width:300px;
+      height:400px;
+      max-height:400px;
+      overflow: auto;
+      float:left;
+      margin-bottom: 100px;
+    }
+    #roomlog {
+      background-color:lightgreen;
+      width:300px;
+      height:400px;
+      max-height:400px;
+      overflow: auto;
+      float:left;
+      margin-bottom: 100px;
+    }
+    #text_box{
+      margin-left:auto;
+      margin-right:auto;
+      width: 700px;
+      height: 150px;
+      border: 5px solid black;
+      border-radius: 10px;
+      background-color: lightyellow;
+      text-align: center;
+      position:absolute;
+      bottom:0;
+    }
+    #room_box{
+      margin-left:auto;
+      margin-right:auto;
+      width: 700px;
+      height: 100px;
+      border: 5px solid black;
+      border-radius: 10px;
+      background-color: lightyellow;
+      text-align: center;
+      position:absolute;
+      bottom:0;
+    }
+  </style>
+  <script src="/socket.io/socket.io.js"></script>
+  <script type ="text/javascript">
+  //this will be set when user logs in. it'll help to keep the client user known
+  var username;
+  var socketio = io.connect();
+  //On connect prompt the log in
+  socketio.on('connect', function(){
+    username = prompt("What's your name?");
+    //send the username to the chat-server.js
+    socketio.emit('adduser', username);
+    document.getElementById("logged_in_user").innerHTML = "Welcome: " + username;
+  });
+
+  //help from https://stackoverflow.com/questions/1115310/how-to-add-a-class-to-dom-element-in-javascript
+  //I avoid jquery because I find the old school way easier to keep all the functions easy to understand
+  socketio.on("message_to_client",function(data) {
+    var new_message = document.createElement("div");
+    message_body = document.createElement('p');
+    message_body.setAttribute("class", data['color']);
+    message_body.appendChild(document.createTextNode(data['user'] + ": "+ data['message']));
+    new_message.appendChild(message_body);
+    document.getElementById('chatlog').appendChild(new_message);
+  });
+  //end helped code
+
+  //I had help from https://stackoverflow.com/questions/9831074/dynamically-create-link-javascript
+  //to create the dynamically created links using javascript. The next 3 functino all use help from that source.
+  socketio.on("invite_to_client",function(data) {
+     var room = data["message"];
+     var new_invite = document.createElement("div");
+     invite_body = document.createElement('a');
+     invite_body.href = '#'
+     invite_body.setAttribute('onclick', "switchRoomOverRide(\'" + room +"\')");
+     invite_body.innerHTML = data['user'] + room;
+     new_invite.appendChild(invite_body);
+     document.getElementById('chatlog').appendChild(new_invite);
+  });
+
+  socketio.on('updaterooms', function(rooms, current_room) {
+    document.getElementById('roomlog').innerHTML = "";
+    var roomList = document.createElement("div");
+    header = document.createElement("hr");
+    header.innerHTML = 'Rooms';
+    roomList.appendChild(header);
+    for (var room in rooms) {
+      var newRoom = document.createElement("div");
+      if(room == current_room){
+        roomBody = document.createElement('p');
+        roomBody.innerHTML = room;
+      }
+      else{
+        roomBody = document.createElement('a');
+        roomBody.href = '#'
+        roomBody.setAttribute('onclick', "switchRoom(\'" + room +"\')");
+        roomBody.innerHTML = room;
+      }
+      newRoom.appendChild(roomBody);
+      roomList.appendChild(newRoom);
+    }
+    document.getElementById('roomlog').appendChild(roomList);
+  });
+  socketio.on('updateusers', function(users) {
+    document.getElementById('userlog').innerHTML = "";
+    var userList = document.createElement("div");
+    header = document.createElement("hr");
+    header.innerHTML = 'Users (click to send PM)';
+    userList.appendChild(header);
+    for (var user in users){
+      var newUser = document.createElement("div");
+      if(user == username){
+        userBody = document.createElement('p');
+        userBody.innerHTML = user;
+        newUser.appendChild(userBody);
+      }
+      else{
+        sendPMLink = document.createElement('a');
+        sendPMLink.href = '#'
+        sendPMLink.setAttribute('onclick', "sendPM(\'" + user +"\')");
+        sendPMLink.innerHTML = user;
+        banLink = document.createElement('a');
+        banLink.href = '#'
+        banLink.setAttribute('onclick', "ban(\'" + user +"\')");
+        banLink.innerHTML = ' Ban ';
+        kickLink = document.createElement('a');
+        kickLink.href = '#'
+        kickLink.setAttribute('onclick', "kick(\'" + user +"\')");
+        kickLink.innerHTML = 'Kick ';
+        inviteLink = document.createElement('a');
+        inviteLink.href = '#'
+        inviteLink.setAttribute('onclick', "inviteToRoom(\'" + user +"\')");
+        inviteLink.innerHTML = 'Invite to Room';
+        newUser.appendChild(sendPMLink);
+        newUser.appendChild(banLink);
+        newUser.appendChild(kickLink);
+        newUser.appendChild(inviteLink);
+      }
+      userList.appendChild(newUser);
+    }
+    document.getElementById('userlog').appendChild(userList);
+  });
+
+  socketio.on('passwordCheck', function(passwordIsThere,room){
+    if(passwordIsThere==true){
+      var password = prompt("Enter the room password.");
+      socketio.emit('switchRoom',{room:room,password:password});
+    }
+    else{
+      socketio.emit('switchRoom', {room:room,password:''});
+    }
+  });
+
+  socketio.on('returnToLobby', function(user){
+    //only send the kicked user to the lobby
+    if(username == user){
+      socketio.emit('switchRoom', {room:'lobby',password:''});
+    }
+  });
+
+  //send message function, from the class
+  function sendMessage(){
+     var msg = document.getElementById("message_input").value;
+     //set default to black, change otherwise
+     var clr = 'black';
+   	 var color_radio_pointers = document.getElementsByName("colors");
+   	 for(var i=0; i<color_radio_pointers.length; i++){
+   			if(color_radio_pointers[i].checked){
+   					clr = color_radio_pointers[i].value;
+   					break;
+   			}
+   	 }
+     //send to chat-server.js
+     socketio.emit("message_to_server", {message:msg, color: clr});
+  }
+
+  function makeRoom(){
+    var roomName = document.getElementById("room_name").value;
+    var roomPassword = document.getElementById("room_password").value;
+    socketio.emit('makeRoom',{room:roomName, password: roomPassword, creator: username});
+  }
+
+  function sendPM(user){
+    var privateMessage = prompt("What you wanna say?");
+    socketio.emit('sendPM', {user:user, message:privateMessage});
+  }
+
+  function inviteToRoom(user){
+    var roomToInvite = prompt("Which room to invite to?");
+    socketio.emit('inviteToRoom', {user:user, room: roomToInvite});
+  }
+
+  function ban(user){
+    socketio.emit('banUser', user);
+  }
+  function kick(user){
+    socketio.emit('kickUser',user);
+  }
+  function switchRoomOverRide(room){
+    socketio.emit('switchRoomOverRide', room);
+  }
+  function switchRoom(room){
+    socketio.emit('checkForPassword',room);
+  }
+  </script>
+  <title>Chat Room</title>
+</head>
+<body>
+<div class="logged_in_user" id="logged_in_user">ChatRoom</div>
+<div class="wrapper" id="wrapper">
+  <div class="roomlog" id="roomlog"><hr>Rooms</div>
+  <div class="chatlog" id="chatlog"><hr>Chat</div>
+  <div class="userlog" id="userlog"><hr>Users</div>
+</div>
+<br>
+<br>
+<div class="text_box" id="text_box">
+  <table>
+  <tr>
+    <td>Send a Message:</td>
+    <td><input type="text" id="message_input"/></td>
+    <td><button onclick="sendMessage()">send</button></td>
+  </tr>
+  <tr>
+    <td><input type="radio" name="colors" value="green"> Green</td>
+    <td><input type="radio" name="colors" value="blue"> Blue</td>
+    <td><input type="radio" name="colors" value="red"> Red</td>
+  </tr>
+  <tr>
+    <td>New Room Name</td>
+    <td><input type="text" id="room_name"/></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>New Room Password (optional):</td>
+    <td><input type="text" id="room_password"/></td>
+    <td><button onclick="makeRoom()">Make Room</button></td>
+  </tr>
+</table>
+</div>
+</body>
+</html>
